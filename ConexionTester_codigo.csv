@@ -1,0 +1,186 @@
+﻿linea,codigo
+1,import javax.swing.*;
+2,import java.awt.*;
+3,import java.awt.event.ActionEvent;
+4,import java.sql.Connection;
+5,import java.sql.DatabaseMetaData;
+6,import java.sql.DriverManager;
+7,import java.sql.SQLException;
+8,
+9,/**
+10, * ConexionTester
+11, * Aplicación de escritorio (Swing) que permite ingresar la configuración de una
+12," * base de datos (URL, usuario y contraseña) y probar la conexión mediante JDBC,"
+13, * mostrando en pantalla el resultado o el error técnico producido.
+14, *
+15, * Unidad 3 - Desarrollo de interfaces gráficas y conexión a bases de datos.
+16, * Solo usa la API estándar de Java (sin frameworks externos).
+17, */
+18,public class ConexionTester extends JFrame {
+19,
+20,"    private static final Color VERDE = new Color(0, 128, 0);"
+21,"    private static final Color ROJO = new Color(190, 0, 0);"
+22,
+23,"    private final JTextField txtUrl = new JTextField(""jdbc:sqlite:inventario.db"", 30);"
+24,    private final JTextField txtUsuario = new JTextField(30);
+25,    private final JPasswordField txtClave = new JPasswordField(30);
+26,"    private final JButton btnProbar = new JButton(""Probar conexión"");"
+27,"    private final JTextArea areaResultado = new JTextArea(10, 40);"
+28,
+29,    public ConexionTester() {
+30,"        super(""Probador de conexión JDBC"");"
+31,        construirInterfaz();
+32,        configurarEventos();
+33,    }
+34,
+35,    // ---------------------------------------------------------------
+36,    // 1. Interfaz gráfica
+37,    // ---------------------------------------------------------------
+38,    private void construirInterfaz() {
+39,        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+40,"        setLayout(new BorderLayout(10, 10));"
+41,
+42,        // Panel de formulario (GridLayout: etiqueta + campo)
+43,"        JPanel panelFormulario = new JPanel(new GridLayout(3, 2, 8, 8));"
+44,"        panelFormulario.setBorder(BorderFactory.createEmptyBorder(12, 12, 0, 12));"
+45,"        panelFormulario.add(new JLabel(""URL de conexión:""));"
+46,        panelFormulario.add(txtUrl);
+47,"        panelFormulario.add(new JLabel(""Usuario (vacío si es SQLite):""));"
+48,        panelFormulario.add(txtUsuario);
+49,"        panelFormulario.add(new JLabel(""Contraseña (vacía si es SQLite):""));"
+50,        panelFormulario.add(txtClave);
+51,
+52,        // Panel del botón
+53,        JPanel panelBoton = new JPanel(new FlowLayout(FlowLayout.CENTER));
+54,        panelBoton.add(btnProbar);
+55,
+56,        // Panel superior = formulario + botón
+57,        JPanel panelNorte = new JPanel(new BorderLayout());
+58,"        panelNorte.add(panelFormulario, BorderLayout.CENTER);"
+59,"        panelNorte.add(panelBoton, BorderLayout.SOUTH);"
+60,
+61,        // Área de resultado dentro de un JScrollPane
+62,        areaResultado.setEditable(false);
+63,        areaResultado.setLineWrap(true);
+64,        areaResultado.setWrapStyleWord(true);
+65,"        areaResultado.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13));"
+66,        JScrollPane scroll = new JScrollPane(areaResultado);
+67,"        scroll.setBorder(BorderFactory.createTitledBorder(""Resultado de la prueba""));"
+68,
+69,"        add(panelNorte, BorderLayout.NORTH);"
+70,"        add(scroll, BorderLayout.CENTER);"
+71,
+72,        pack();
+73,        setLocationRelativeTo(null);
+74,    }
+75,
+76,    // ---------------------------------------------------------------
+77,"    // 2. ActionListener del botón ""Probar conexión"""
+78,    // ---------------------------------------------------------------
+79,    private void configurarEventos() {
+80,        btnProbar.addActionListener((ActionEvent e) -> probarConexion());
+81,    }
+82,
+83,    private void probarConexion() {
+84,        final String url = txtUrl.getText().trim();
+85,        final String usuario = txtUsuario.getText().trim();
+86,        final String clave = new String(txtClave.getPassword());
+87,
+88,        if (url.isEmpty()) {
+89,"            mostrarResultado(""Fallo de validación: debe ingresar la URL de conexión."", ROJO);"
+90,            return;
+91,        }
+92,
+93,        btnProbar.setEnabled(false);
+94,"        mostrarResultado(""Probando conexión..."", Color.DARK_GRAY);"
+95,
+96,        // La prueba se ejecuta fuera del hilo de eventos para no congelar la ventana.
+97,"        new SwingWorker<Resultado, Void>() {"
+98,            @Override
+99,            protected Resultado doInBackground() {
+100,"                return intentarConexion(url, usuario, clave);"
+101,            }
+102,
+103,            @Override
+104,            protected void done() {
+105,                try {
+106,                    Resultado r = get();
+107,"                    mostrarResultado(r.mensaje, r.exito ? VERDE : ROJO);"
+108,                } catch (Exception ex) {
+109,"                    mostrarResultado(""Error inesperado: "" + ex.getMessage(), ROJO);"
+110,                } finally {
+111,                    btnProbar.setEnabled(true);
+112,                }
+113,            }
+114,        }.execute();
+115,    }
+116,
+117,    // ---------------------------------------------------------------
+118,"    // 3 y 4. Lógica JDBC, excepciones y cierre seguro de recursos"
+119,    // ---------------------------------------------------------------
+120,"    private Resultado intentarConexion(String url, String usuario, String clave) {"
+121,        try {
+122,            // Carga explícita del driver según el motor indicado en la URL.
+123,            String driver = obtenerDriver(url);
+124,            if (driver != null) {
+125,                Class.forName(driver); // puede lanzar ClassNotFoundException
+126,            }
+127,
+128,"            // try-with-resources: la conexión se cierra siempre, con éxito o con fallo."
+129,            try (Connection conexion = usuario.isEmpty() && clave.isEmpty()
+130,                    ? DriverManager.getConnection(url)
+131,"                    : DriverManager.getConnection(url, usuario, clave)) {"
+132,
+133,                DatabaseMetaData meta = conexion.getMetaData();
+134,"                return new Resultado(true,"
+135,"                        ""Conexión exitosa.\n"""
+136,"                        + ""Motor: "" + meta.getDatabaseProductName()"
+137,"                        + "" "" + meta.getDatabaseProductVersion() + ""\n"""
+138,"                        + ""Driver: "" + meta.getDriverName()"
+139,"                        + "" "" + meta.getDriverVersion());"
+140,            }
+141,        } catch (ClassNotFoundException e) {
+142,"            return new Resultado(false,"
+143,"                    ""Fallo del driver: no se encontró la clase "" + e.getMessage() + "".\n"""
+144,"                    + ""Agregue el .jar del driver JDBC al classpath."");"
+145,        } catch (SQLException e) {
+146,"            return new Resultado(false,"
+147,"                    ""Fallo de conexión.\n"""
+148,"                    + ""Mensaje técnico: "" + e.getMessage() + ""\n"""
+149,"                    + ""SQLState: "" + e.getSQLState() + "" | Código: "" + e.getErrorCode());"
+150,        }
+151,    }
+152,
+153,    /** Devuelve la clase del driver según el prefijo de la URL (null si no se reconoce). */
+154,    private String obtenerDriver(String url) {
+155,        String u = url.toLowerCase();
+156,"        if (u.startsWith(""jdbc:sqlite:""))     return ""org.sqlite.JDBC"";"
+157,"        if (u.startsWith(""jdbc:mysql:""))      return ""com.mysql.cj.jdbc.Driver"";"
+158,"        if (u.startsWith(""jdbc:postgresql:"")) return ""org.postgresql.Driver"";"
+159,"        if (u.startsWith(""jdbc:h2:""))         return ""org.h2.Driver"";"
+160,"        if (u.startsWith(""jdbc:mariadb:""))    return ""org.mariadb.jdbc.Driver"";"
+161,"        if (u.startsWith(""jdbc:sqlserver:""))  return ""com.microsoft.sqlserver.jdbc.SQLServerDriver"";"
+162,        return null; // DriverManager intentará resolverlo solo
+163,    }
+164,
+165,"    private void mostrarResultado(String texto, Color color) {"
+166,        areaResultado.setForeground(color);
+167,        areaResultado.setText(texto);
+168,        areaResultado.setCaretPosition(0);
+169,    }
+170,
+171,    /** Resultado simple de una prueba de conexión. */
+172,    private static class Resultado {
+173,        final boolean exito;
+174,        final String mensaje;
+175,
+176,"        Resultado(boolean exito, String mensaje) {"
+177,            this.exito = exito;
+178,            this.mensaje = mensaje;
+179,        }
+180,    }
+181,
+182,    public static void main(String[] args) {
+183,        SwingUtilities.invokeLater(() -> new ConexionTester().setVisible(true));
+184,    }
+185,}
